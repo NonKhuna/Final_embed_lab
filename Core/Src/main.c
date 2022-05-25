@@ -33,6 +33,9 @@
 /* USER CODE BEGIN PD */
 #define PM_Port GPIOA
 #define PM_PIN GPIO_PIN_5
+
+#define led_Port GPIOA
+#define led_Pin GPIO_PIN_8
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -42,6 +45,8 @@
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
+
+TIM_HandleTypeDef htim4;
 
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
@@ -56,6 +61,7 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_TIM4_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -63,18 +69,30 @@ static void MX_USART1_UART_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 DHT_DataTypedef DHT22_Data;
-float Temperature, Humidity;
-int adcValue=0;
+float Temperature, Humidity, sigVolt;
+float dustLevel=0.0;
+int value[2];
 
 void sendData(){
-	char buffer[18];
-	char temp[7], humi[7];
+	char buffer[40];
+	char temp[7], humi[7], dust[7];
 	gcvt(Temperature, 5, temp);
 	gcvt(Humidity, 5, humi);
-	sprintf(buffer, "[%s,%s,%d,0]",temp, humi, adcValue);
+	gcvt(dustLevel, 5, dust);
+	sprintf(buffer, "[%s,%s,%d,%s]",temp, humi,value[1],dust);
 	HAL_UART_Transmit(&huart1, buffer, sizeof(buffer), HAL_MAX_DELAY);
-//	HAL_UART_Transmit(&huart2, buffer, sizeof(buffer), HAL_MAX_DELAY);
+	HAL_UART_Transmit(&huart2, buffer, sizeof(buffer), HAL_MAX_DELAY);
 }
+
+void delay(uint32_t microseconds){
+	TIM4->CNT = 0;
+	while(TIM4->CNT < microseconds){}
+//	char buffer[10];
+//	sprintf(buffer, "%d \r\n", TIM4->CNT);
+//	HAL_UART_Transmit(&huart2, buffer, sizeof(buffer), HAL_MAX_DELAY);
+
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -108,8 +126,10 @@ int main(void)
   MX_USART2_UART_Init();
   MX_ADC1_Init();
   MX_USART1_UART_Init();
+  MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
   int max_eb=-1e9,min_eb=1e9;
+  HAL_TIM_Base_Start(&htim4);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -125,22 +145,46 @@ int main(void)
 	  Humidity = DHT22_Data.Humidity/10.0;
 
 	  // light sensor
+	  ADC_Select_CH0();
 	  HAL_ADC_Start(&hadc1);
-	  if (HAL_ADC_PollForConversion(&hadc1, 1000) == HAL_OK) {
-		  adcValue = HAL_ADC_GetValue(&hadc1);
+	  HAL_ADC_PollForConversion(&hadc1, 1000);
+	  value[0] = HAL_ADC_GetValue(&hadc1);
+	  HAL_ADC_Stop(&hadc1);
+
+	  // Dust Sensor
+	  ADC_Select_CH4();
+	  HAL_ADC_Start(&hadc1);
+	  HAL_ADC_PollForConversion(&hadc1, 1000);
+	  HAL_GPIO_WritePin(led_Port, led_Pin, GPIO_PIN_RESET);
+//	  delay(280);
+	  value[1] = HAL_ADC_GetValue(&hadc1);
+//	  delay(40);
+	  sigVolt = (float)value[1] * (5/4096);
+	  dustLevel = 0.17 * sigVolt - 0.1;
+	  HAL_GPIO_WritePin(led_Port, led_Pin, GPIO_PIN_SET);
+//	  delay(9680);
+	  if(dustLevel < 0.0){
+		  dustLevel = 0.0;
+	  }
+	  HAL_ADC_Stop(&hadc1);
+
+//	  HAL_ADC_Start(&hadc1);
+//	  if (HAL_ADC_PollForConversion(&hadc1, 1000) == HAL_OK) {
+//		  adcValue = HAL_ADC_GetValue(&hadc1);
 //		  char buffer[10];
 //		  sprintf(buffer, "%d \r\n", adcValue);
 //		  HAL_UART_Transmit(&huart2, buffer, sizeof(buffer), HAL_MAX_DELAY);
-	  }
+//	  }
 
 	  // PM2.5
 
 	  sendData();
-	  char rbuffer[40];
-	  if (HAL_UART_Receive(&huart1, rbuffer, sizeof(rbuffer), 100000) == HAL_OK){
-		  HAL_UART_Transmit(&huart2, rbuffer, sizeof(rbuffer), HAL_MAX_DELAY);
-	  }
-	  HAL_Delay(1000);
+//	  char rbuffer[40];
+//	  if (HAL_UART_Receive(&huart1, rbuffer, sizeof(rbuffer), 100000) == HAL_OK){
+//		  HAL_UART_Transmit(&huart2, rbuffer, sizeof(rbuffer), HAL_MAX_DELAY);
+//	  }
+	  HAL_Delay(500);
+//	  HAL_Delay(1000);
   }
   /* USER CODE END 3 */
 }
@@ -212,7 +256,7 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
   hadc1.Init.ScanConvMode = DISABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
@@ -236,6 +280,55 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief TIM4 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM4_Init(void)
+{
+
+  /* USER CODE BEGIN TIM4_Init 0 */
+
+  /* USER CODE END TIM4_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM4_Init 1 */
+
+  /* USER CODE END TIM4_Init 1 */
+  htim4.Instance = TIM4;
+  htim4.Init.Prescaler = 84-1;
+  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim4.Init.Period = 65535;
+  htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM4_Init 2 */
+
+  /* USER CODE END TIM4_Init 2 */
+  HAL_TIM_MspPostInit(&htim4);
 
 }
 
@@ -339,7 +432,33 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void ADC_Select_CH0 (void)
+{
+	ADC_ChannelConfTypeDef sConfig = {0};
+	  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+	  */
+	  sConfig.Channel = ADC_CHANNEL_0;
+	  sConfig.Rank = 1;
+	  sConfig.SamplingTime = ADC_SAMPLETIME_28CYCLES;
+	  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+	  {
+	    Error_Handler();
+	  }
+}
 
+void ADC_Select_CH4 (void)
+{
+	ADC_ChannelConfTypeDef sConfig = {0};
+	  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+	  */
+	  sConfig.Channel = ADC_CHANNEL_4;
+	  sConfig.Rank = 1;
+	  sConfig.SamplingTime = ADC_SAMPLETIME_28CYCLES;
+	  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+	  {
+	    Error_Handler();
+	  }
+}
 /* USER CODE END 4 */
 
 /**
