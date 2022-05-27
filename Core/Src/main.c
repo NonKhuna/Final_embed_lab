@@ -74,14 +74,14 @@ float dustLevel=0.0;
 int value[2];
 
 void sendData(){
-	char buffer[40];
+	char buffer[40] = {};
 	char temp[7], humi[7], dust[7];
 	gcvt(Temperature, 5, temp);
 	gcvt(Humidity, 5, humi);
 	gcvt(dustLevel, 5, dust);
-	sprintf(buffer, "[%s,%s,%d,%s]",temp, humi,value[1],dust);
+	sprintf(buffer, "[%s,%s,%d,%s]",temp, humi,value[0],dust);
 	HAL_UART_Transmit(&huart1, buffer, sizeof(buffer), HAL_MAX_DELAY);
-	HAL_UART_Transmit(&huart2, buffer, sizeof(buffer), HAL_MAX_DELAY);
+//	HAL_UART_Transmit(&huart2, buffer, sizeof(buffer), HAL_MAX_DELAY);
 }
 
 void delay(uint32_t microseconds){
@@ -157,32 +157,25 @@ int main(void)
 	  HAL_ADC_PollForConversion(&hadc1, 1000);
 	  HAL_GPIO_WritePin(led_Port, led_Pin, GPIO_PIN_RESET);
 //	  delay(280);
-	  value[1] = HAL_ADC_GetValue(&hadc1);
+	  value[1] = HAL_ADC_GetValue(&hadc1)*5;
 //	  delay(40);
-	  sigVolt = (float)value[1] * (5/4096);
+	  sigVolt = ((float)value[1]) * (3.3/4096);
 	  dustLevel = 0.17 * sigVolt - 0.1;
 	  HAL_GPIO_WritePin(led_Port, led_Pin, GPIO_PIN_SET);
 //	  delay(9680);
-	  if(dustLevel < 0.0){
-		  dustLevel = 0.0;
-	  }
+//	  if(dustLevel < 0.0){
+//	  }
+	  dustLevel = 0.0;
 	  HAL_ADC_Stop(&hadc1);
 
-//	  HAL_ADC_Start(&hadc1);
-//	  if (HAL_ADC_PollForConversion(&hadc1, 1000) == HAL_OK) {
-//		  adcValue = HAL_ADC_GetValue(&hadc1);
-//		  char buffer[10];
-//		  sprintf(buffer, "%d \r\n", adcValue);
-//		  HAL_UART_Transmit(&huart2, buffer, sizeof(buffer), HAL_MAX_DELAY);
-//	  }
 
 	  // PM2.5
 
 	  sendData();
-//	  char rbuffer[40];
-//	  if (HAL_UART_Receive(&huart1, rbuffer, sizeof(rbuffer), 100000) == HAL_OK){
-//		  HAL_UART_Transmit(&huart2, rbuffer, sizeof(rbuffer), HAL_MAX_DELAY);
-//	  }
+	  char rbuffer[40];
+	  if (HAL_UART_Receive(&huart1, rbuffer, sizeof(rbuffer), 100000) == HAL_OK){
+		  HAL_UART_Transmit(&huart2, rbuffer, sizeof(rbuffer), HAL_MAX_DELAY);
+	  }
 	  HAL_Delay(500);
 //	  HAL_Delay(1000);
   }
