@@ -74,10 +74,9 @@ int cnt=0;
 
 void sendData(){
 	char buffer[40] = {};
-	char temp[7], humi[7], dust[7];
+	char temp[7], humi[7];
 	gcvt(Temperature, 5, temp);
 	gcvt(Humidity, 5, humi);
-	gcvt(dustLevel, 5, dust);
 	sprintf(buffer, "[%s,%s,%d,%d]",temp, humi,value[0],LedStatus);
 	HAL_UART_Transmit(&huart1, buffer, sizeof(buffer), HAL_MAX_DELAY);
 //	HAL_UART_Transmit(&huart2, buffer, sizeof(buffer), HAL_MAX_DELAY);
@@ -151,7 +150,6 @@ int main(void)
 	  HAL_ADC_PollForConversion(&hadc1, 1000);
 	  value[0] = HAL_ADC_GetValue(&hadc1);
 	  HAL_ADC_Stop(&hadc1);
-	  dustLevel = 0.0;
 
 	  // PM2.5
 	  char rbuffer[2];
